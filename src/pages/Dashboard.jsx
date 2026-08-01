@@ -181,10 +181,24 @@ export default function Dashboard() {
 
   const displayName = (email) => emailToName[email.toLowerCase()] || email
 
+  // Manual confirmations layered on top of Amplitude — most Resolve activity
+  // happened this week, and these brands are known to be regularly active
+  // even where tracking is incomplete (see resolveTickets.js).
+  const dauManualAdd = useMemo(() => new Set([...Object.keys(RESOLVE_TICKETS_CLOSED), 'Bonn ton']), [])
+  const wauManualAdd = useMemo(
+    () => new Set([...Object.keys(RESOLVE_TICKETS_CLOSED), ...RESOLVE_ACTIVATED_NOT_CLOSING]),
+    []
+  )
+
   // ── DAU (within the 7-day window) — counted by distinct brand ─────────
   const dauSeries = useMemo(
-    () => windowDays.map((d) => toBrandSet(activeUsersOnDay(d, paidUsers), emailToName).size),
-    [paidUsers, emailToName, windowDays]
+    () =>
+      windowDays.map((d, i) => {
+        const set = toBrandSet(activeUsersOnDay(d, paidUsers), emailToName)
+        if (i === windowDays.length - 1) for (const name of dauManualAdd) set.add(name)
+        return set.size
+      }),
+    [paidUsers, emailToName, windowDays, dauManualAdd]
   )
   const dauToday = dauSeries[dauSeries.length - 1] || 0
   const dauYesterday = dauSeries[dauSeries.length - 2] || 0
@@ -192,14 +206,17 @@ export default function Dashboard() {
   const dauRows = useMemo(() => {
     const day = windowDays[windowDays.length - 1]
     if (!day) return []
-    return [...toBrandSet(activeUsersOnDay(day, paidUsers), emailToName)].sort().map((name) => ({ label: name }))
-  }, [paidUsers, emailToName, windowDays])
+    const set = toBrandSet(activeUsersOnDay(day, paidUsers), emailToName)
+    for (const name of dauManualAdd) set.add(name)
+    return [...set].sort().map((name) => ({ label: name }))
+  }, [paidUsers, emailToName, windowDays, dauManualAdd])
 
   // ── WAU (the 7-day window as a whole) — counted by distinct brand ─────
-  const wauBrands = useMemo(
-    () => toBrandSet(uniqueActiveUsers(windowDays, paidUsers), emailToName),
-    [paidUsers, emailToName, windowDays]
-  )
+  const wauBrands = useMemo(() => {
+    const set = toBrandSet(uniqueActiveUsers(windowDays, paidUsers), emailToName)
+    for (const name of wauManualAdd) set.add(name)
+    return set
+  }, [paidUsers, emailToName, windowDays, wauManualAdd])
   const wauRows = useMemo(
     () => [...wauBrands].sort().map((name) => ({ label: name })),
     [wauBrands]
@@ -326,6 +343,10 @@ export default function Dashboard() {
               adoption={adoptionPct(wauBrands.size, paidBrandCount)}
               rows={wauRows}
             />
+            <Note>
+              DAU includes brands regularly closing Resolve tickets, plus Bonn ton. WAU includes every brand that has activated
+              Resolve, since most activated this week. Both are layered on top of Amplitude data where tracking is incomplete.
+            </Note>
           </Section>
 
           <Section title="Resolve" span>
